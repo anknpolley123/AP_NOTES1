@@ -2,12 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#2563eb" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <link rel="apple-touch-icon" href="dragon_bg.png" />
-    <title>AP Notes Pro</title>
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AP_NOTES_PRO</title>
   </head>
   <body>
     <div id="root">
@@ -32,7 +29,7 @@
         @keyframes shine { 0% { transform: translate(-50%, -50%) rotate(45deg); } 100% { transform: translate(150%, 150%) rotate(45deg); } }
       </style>
     </div>
-    
+    <script type="module" src="/src/main.tsx"></script>
     <script>
       (function() {
         const bar = document.getElementById('preloader-progress');
@@ -62,12 +59,11 @@
         }, 15000);
       })();
     </script>
+    <script>
       window.onerror = function(msg, url, line, col, error) {
         console.error('GLOBAL_ERROR:', msg, 'at', url, ':', line, ':', col, error);
         return false;
       };
     </script>
-    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

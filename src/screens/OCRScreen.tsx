@@ -1,157 +1,153 @@
-
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Camera, Upload, Check, X, RefreshCcw, FileText, Wand2, Crop, Layers } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Camera as CameraIcon, RefreshCw, Check, X, Upload, ScanLine, RotateCw, Sun, Contrast, FileText, Download, Wand2, Type, Hash, Sparkles } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import Cropper, { Area, Point } from 'react-easy-crop';
+import Cropper, { Area } from 'react-easy-crop';
 import * as pdfjs from 'pdfjs-dist';
-import Layout from '../components/Layout';
-import { recognizeText } from '../services/ocrService';
-import { createPDF } from '../services/pdfService';
-import { refineText } from '../services/aiService';
+import { GoogleGenAI } from "@google/genai";
 
-// Set up pdfjs worker
+// PDF.js worker setup
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-/**
- * OCRScreen Component
- * 
- * Handles multi-modal input processing including live camera scanning,
- * gallery uploads, and PDF parsing. Integrates with Gemini AI for text 
- * refinement and Capacitor for native cross-platform functionality.
- * 
- * @version 1.2.5
- * @stable
- */
-export default function OCRScreen() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+interface OCRScreenProps {
+  onCapture?: (text: string) => void;
+}
+
+export default function OCRScreen({ onCapture }: OCRScreenProps) {
+  const [mode, setMode] = useState<'camera' | 'upload' | 'refine'>('camera');
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [brightness, setBrightness] = useState(100);
-  const [contrast, setContrast] = useState(100);
-  const [showFilters, setShowFilters] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [showFormatModal, setShowFormatModal] = useState(false);
-  const [ocrResult, setOcrResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pdfPages, setPdfPages] = useState<string[]>([]);
-  const [currentPageIndex, setCurrentPageIndex] = useState(0);
-  const navigate = useNavigate();
-
-  // Cropper state
-  const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [rotation, setRotation] = useState(0);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [ocrText, setOcrText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize camera
+  const startCamera = async () => {
+    try {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+      setStream(newStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = newStream;
+      }
+      setMode('camera');
+      setError(null);
+    } catch (err) {
+      console.error("Scanner: Camera error", err);
+      setError("Unable to access camera. Please check permissions.");
+    }
+  };
 
   useEffect(() => {
-    if (!isEditing && !capturedImage) {
+    if (mode === 'camera') {
       startCamera();
     }
     return () => {
       if (stream) {
-        stream.getTracks().forEach(track => {
-          console.log(`System: Stopping track ${track.label}`);
-          track.stop();
-        });
+        stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [isEditing, capturedImage]);
+  }, [mode]);
 
-  /**
-   * Initializes system camera stream with environment facing mode
-   */
-  const startCamera = async () => {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setError("Your browser or device does not support camera access.");
-      return;
-    }
-
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: 'environment',
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        } 
-      });
-      setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
-    } catch (err) {
-      console.error("Scanner: Camera access failed:", err);
-      setError("LENS_INITIALIZATION_ERROR: Please enable camera permissions in settings.");
-    }
-  };
-
-  /**
-   * Processes uploaded PDF files, converting pages to high-res images
-   */
-  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsProcessing(true);
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjs.getDocument(arrayBuffer).promise;
-      const pages: string[] = [];
-
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale: 2 });
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-
-        if (context) {
-          // @ts-ignore - pdfjs types can be tricky
-          await page.render({ canvasContext: context, viewport }).promise;
-          pages.push(canvas.toDataURL('image/jpeg'));
+  const captureImage = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        setCapturedImage(canvas.toDataURL('image/jpeg'));
+        setMode('upload'); // Transition to crop/upload mode
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
         }
       }
-
-      setPdfPages(pages);
-      setCapturedImage(pages[0]);
-      setIsEditing(true);
-      setCurrentPageIndex(0);
-    } catch (err) {
-      console.error("PDF load error:", err);
-      setError("Failed to load PDF");
-    } finally {
-      setIsProcessing(false);
     }
   };
 
-  const handleScanToPdf = async () => {
-    if (!capturedImage) return;
+  const onCropComplete = useCallback((_: Area, croppedAreaPixels: Area) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  const getCroppedImage = async () => {
+    if (!capturedImage || !croppedAreaPixels) return null;
+
+    const image = new Image();
+    image.src = capturedImage;
+    await new Promise(resolve => image.onload = resolve);
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    canvas.width = croppedAreaPixels.width;
+    canvas.height = croppedAreaPixels.height;
+
+    ctx.drawImage(
+      image,
+      croppedAreaPixels.x,
+      croppedAreaPixels.y,
+      croppedAreaPixels.width,
+      croppedAreaPixels.height,
+      0,
+      0,
+      croppedAreaPixels.width,
+      croppedAreaPixels.height
+    );
+
+    return canvas.toDataURL('image/jpeg');
+  };
+
+  const processOCR = async () => {
     setIsProcessing(true);
+    setError(null);
+
     try {
-      // In a real app we'd combine multiple scans, for now we save current
-      await createPDF(capturedImage, "SCAN_" + new Date().getTime());
-      alert("Scan saved to PDF!");
+      const imageData = await getCroppedImage();
+      if (!imageData) throw new Error("Processing failed: Image data empty");
+
+      // Initialize Gemini AI
+      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+
+      const base64Data = imageData.split(',')[1];
+      const result = await genAI.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: {
+          role: 'user',
+          parts: [
+            {
+              inlineData: {
+                data: base64Data,
+                mimeType: "image/jpeg"
+              }
+            },
+            {
+              text: "Extract all text from this image. Fix any common OCR typos. If it looks like a note, list, or document, preserve the structure. Only return the extracted text."
+            }
+          ]
+        }
+      });
+
+      const text = result.text || "No text extracted.";
+      setOcrText(text);
+      setMode('refine');
     } catch (err) {
-      setError("Failed to generate PDF from scan");
+      console.error("AI: OCR failure", err);
+      setError("Neural engine failed to parse image. Please try again with better lighting.");
     } finally {
       setIsProcessing(false);
-    }
-  };
-
-  const capture = () => {
-    if (videoRef.current && canvasRef.current) {
-      const context = canvasRef.current.getContext('2d');
-      if (context) {
-        canvasRef.current.width = videoRef.current.videoWidth;
-        canvasRef.current.height = videoRef.current.videoHeight;
-        context.drawImage(videoRef.current, 0, 0);
-        const dataUrl = canvasRef.current.toDataURL('image/jpeg');
-        setCapturedImage(dataUrl);
-        setIsEditing(true);
-      }
     }
   };
 
@@ -161,495 +157,181 @@ export default function OCRScreen() {
       const reader = new FileReader();
       reader.onload = (event) => {
         setCapturedImage(event.target?.result as string);
-        setIsEditing(true);
+        setMode('upload');
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const onCropComplete = useCallback((_croppedArea: Area, croppedAreaPixels: Area) => {
-    setCroppedAreaPixels(croppedAreaPixels);
-  }, []);
-
-  const createImage = (url: string): Promise<HTMLImageElement> =>
-    new Promise((resolve, reject) => {
-      const image = new Image();
-      image.addEventListener('load', () => resolve(image));
-      image.addEventListener('error', (error) => reject(error));
-      image.setAttribute('crossOrigin', 'anonymous');
-      image.src = url;
-    });
-
-  const getCroppedImg = async (imageSrc: string, pixelCrop: Area, rotation = 0, brightness = 100, contrast = 100): Promise<string | null> => {
-    const image = await createImage(imageSrc);
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-
-    if (!ctx) return null;
-
-    const rotRad = (rotation * Math.PI) / 180;
-    const { width: bBoxWidth, height: bBoxHeight } = {
-      width: Math.abs(Math.cos(rotRad) * image.width) + Math.abs(Math.sin(rotRad) * image.height),
-      height: Math.abs(Math.sin(rotRad) * image.width) + Math.abs(Math.cos(rotRad) * image.height),
-    };
-
-    canvas.width = bBoxWidth;
-    canvas.height = bBoxHeight;
-
-    // Apply filters before drawing the main image
-    ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
-
-    ctx.translate(bBoxWidth / 2, bBoxHeight / 2);
-    ctx.rotate(rotRad);
-    ctx.translate(-image.width / 2, -image.height / 2);
-    ctx.drawImage(image, 0, 0);
-
-    const data = ctx.getImageData(pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height);
-
-    canvas.width = pixelCrop.width;
-    canvas.height = pixelCrop.height;
-
-    // Reset filter for putting image data
-    ctx.filter = 'none';
-    ctx.putImageData(data, 0, 0);
-
-    return canvas.toDataURL('image/jpeg');
-  };
-
-  const processOCR = async () => {
-    if (!capturedImage || !croppedAreaPixels) return;
-    setIsProcessing(true);
-    try {
-      const croppedImage = await getCroppedImg(capturedImage, croppedAreaPixels, rotation, brightness, contrast);
-      if (!croppedImage) throw new Error("Failed to crop image");
-      
-      const text = await recognizeText(croppedImage);
-      setOcrResult(text);
-      setShowFormatModal(true);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to recognize text.");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const processBatchOCR = async () => {
-    if (pdfPages.length === 0) return;
-    setIsProcessing(true);
-    try {
-      let combinedText = "";
-      for (let i = 0; i < pdfPages.length; i++) {
-        const text = await recognizeText(pdfPages[i]);
-        combinedText += `\n--- PAGE ${i + 1} ---\n${text}\n`;
-      }
-      setOcrResult(combinedText);
-      setShowFormatModal(true);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to process batch OCR.");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleFormatSelect = async (format: 'text' | 'markdown' | 'pdf' | 'ai_refine') => {
-    if (!ocrResult) return;
-    
-    if (format === 'ai_refine') {
-      setIsProcessing(true);
-      setShowFormatModal(false);
-      try {
-        const refined = await refineText(ocrResult);
-        navigate('/editor', { state: { ocrText: refined, type: 'note' } });
-      } catch (err) {
-        setError("AI Refinement failed, opening raw text instead.");
-        navigate('/editor', { state: { ocrText: ocrResult, type: 'scan' } });
-      } finally {
-        setIsProcessing(false);
-      }
-      return;
-    }
-
-    if (format === 'pdf') {
-      try {
-        await createPDF(ocrResult, "OCR_Result_" + new Date().getTime());
-        navigate('/'); // Navigate home after successful PDF generation
-      } catch (err) {
-        setError("Failed to generate PDF");
-      }
-    } else {
-      const finalResult = format === 'markdown' 
-        ? `# OCR RESULT\n\n${ocrResult}\n\n*Generated on ${new Date().toLocaleString()}*`
-        : ocrResult;
-      navigate('/editor', { state: { ocrText: finalResult, type: 'scan' } });
-    }
-    setShowFormatModal(false);
-  };
-
-  const reset = () => {
-    setCapturedImage(null);
-    setIsEditing(false);
-    setError(null);
-    setRotation(0);
-    setZoom(1);
-    setBrightness(100);
-    setContrast(100);
-    setShowFilters(false);
-  };
-
   return (
-    <Layout 
-      title="SCANNER" 
-      subtitle={isEditing ? "EDIT_IMAGE ACTIVE" : "AP_VISION ACTIVE"}
-      hugeText={isEditing ? "EDIT\nFRAME" : "CAPTURE\nSCAN"}
-      showBack
-      hideNav
-    >
-      <div className="flex-1 flex flex-col relative bg-slate-950 -mx-4 -mt-8 sm:mx-0 sm:mt-0 sm:rounded-[40px] overflow-hidden shadow-2xl mb-8 group min-h-[500px]">
-        {!capturedImage ? (
-          <>
-            <video 
-              ref={videoRef} 
-              autoPlay 
-              playsInline 
-              className="w-full h-full object-cover grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-700"
-              id="camera-preview"
-            />
-            {/* Viewfinder Overlay */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-64 h-64 border-2 border-blue-500/30 rounded-3xl relative">
-                <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-blue-500 rounded-tl-lg"></div>
-                <div className="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-blue-500 rounded-tr-lg"></div>
-                <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-blue-500 rounded-bl-lg"></div>
-                <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-blue-500 rounded-br-lg"></div>
-                
-                {/* Scanning Line Animation */}
-                <div className="absolute top-0 inset-x-0 h-0.5 bg-blue-500 shadow-[0_0_15px_rgba(37,99,235,0.8)] animate-[scan_3s_ease-in-out_infinite]"></div>
-              </div>
-            </div>
-            
-            <div className="absolute bottom-8 inset-x-0 flex justify-center items-end gap-12 text-center">
-               <label className="flex flex-col items-center gap-2 cursor-pointer group/upload">
-                  <div className="w-14 h-14 bg-slate-800/80 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white group-hover/upload:bg-slate-700 transition-colors border border-white/10 shadow-lg">
-                    <Upload className="w-6 h-6" />
-                  </div>
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover/upload:text-white transition-colors">Gallery</span>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
-               </label>
-               
-               <div className="flex flex-col items-center gap-2">
-                 <button 
-                    onClick={capture}
-                    className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center group/btn hover:scale-105 active:scale-95 transition-all shadow-2xl"
-                    id="capture-button"
-                  >
-                    <div className="w-16 h-16 border-[6px] border-slate-900/5 rounded-2xl flex items-center justify-center">
-                      <ScanLine className="w-8 h-8 text-slate-900 group-hover/btn:scale-110 transition-transform" />
-                    </div>
-                  </button>
-                  <span className="text-[10px] font-black text-white uppercase tracking-widest">Capture</span>
-               </div>
+    <div className="h-full bg-slate-950 flex flex-col font-sans relative overflow-hidden rounded-3xl border border-white/10 shadow-2xl">
+      {/* Dynamic Header */}
+      <div className="p-4 flex items-center justify-between border-b border-white/5 bg-slate-950/50 backdrop-blur-md z-10">
+        <div className="flex items-center gap-2">
+           <div className={`w-2 h-2 rounded-full animate-pulse ${isProcessing ? 'bg-blue-500 shadow-[0_0_10px_#3b82f6]' : 'bg-green-500 shadow-[0_0_10px_#22c55e]'}`} />
+           <span className="text-[10px] font-black uppercase tracking-[.3em] text-slate-400">
+             {mode.toUpperCase()} MODE
+           </span>
+        </div>
+        <button onClick={() => setMode('camera')} className="text-slate-500 hover:text-white transition-colors">
+          <RefreshCcw className="w-4 h-4" />
+        </button>
+      </div>
 
-               <div className="flex flex-col items-center gap-2">
-                  <label className="w-14 h-14 bg-slate-800/80 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white cursor-pointer hover:bg-slate-700 transition-colors border border-white/10 shadow-lg">
-                    <FileText className="w-6 h-6 text-blue-400" />
-                    <input type="file" accept=".pdf" className="hidden" onChange={handlePdfUpload} />
-                  </label>
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest transition-colors">Import PDF</span>
-               </div>
-            </div>
-          </>
-        ) : isEditing && !isProcessing ? (
-          <div className="relative w-full h-full bg-slate-950">
-            <div className="w-full h-full" style={{ filter: `brightness(${brightness}%) contrast(${contrast}%)` }}>
+      <div className="flex-1 relative overflow-hidden">
+        <AnimatePresence mode="wait">
+          {mode === 'camera' && (
+            <motion.div 
+              key="camera"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0"
+            >
+              <video 
+                ref={videoRef} 
+                autoPlay 
+                playsInline 
+                className="w-full h-full object-cover grayscale brightness-125 contrast-125" 
+              />
+              {/* Scanner HUD Overlay */}
+              <div className="absolute inset-0 pointer-events-none border-[40px] border-black/40">
+                <div className="w-full h-full border-2 border-blue-500/30 relative">
+                   <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-blue-500" />
+                   <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-blue-500" />
+                   <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-blue-500" />
+                   <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-blue-500" />
+                   {/* Scanning Line */}
+                   <div className="absolute left-0 right-0 h-0.5 bg-blue-500 shadow-[0_0_15px_#3b82f6] animate-scan" />
+                </div>
+              </div>
+              
+              <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-6">
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-12 h-12 bg-slate-900/80 rounded-full flex items-center justify-center border border-white/10 hover:bg-white/10 transition-all"
+                >
+                  <Upload className="w-5 h-5 text-slate-400" />
+                </button>
+                <button 
+                  onClick={captureImage}
+                  className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(255,255,255,0.2)] active:scale-90 transition-transform"
+                >
+                  <div className="w-16 h-16 border-4 border-slate-950 rounded-full" />
+                </button>
+                <div className="w-12 h-12 invisible" />
+              </div>
+            </motion.div>
+          )}
+
+          {mode === 'upload' && capturedImage && (
+            <motion.div 
+              key="upload"
+              initial={{ opacity: 0, scale: 1.1 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900"
+            >
               <Cropper
                 image={capturedImage}
                 crop={crop}
                 zoom={zoom}
-                rotation={rotation}
-                aspect={3 / 4}
+                aspect={1}
                 onCropChange={setCrop}
-                onZoomChange={setZoom}
-                onRotationChange={setRotation}
                 onCropComplete={onCropComplete}
+                onZoomChange={setZoom}
               />
-            </div>
-
-            {/* PDF Page Navigation */}
-            {pdfPages.length > 1 && (
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/90 text-white px-4 py-2 rounded-2xl border border-white/10 flex items-center gap-4 text-[10px] font-black tracking-widest z-10 backdrop-blur-md">
+              <div className="absolute bottom-10 inset-x-4 flex gap-4">
                  <button 
-                    onClick={() => {
-                      const idx = Math.max(0, currentPageIndex - 1);
-                      setCurrentPageIndex(idx);
-                      setCapturedImage(pdfPages[idx]);
-                    }}
-                    className="p-1 hover:text-blue-500 transition-colors disabled:opacity-30 pointer-events-auto"
-                    disabled={currentPageIndex === 0}
+                   onClick={() => setMode('camera')}
+                   className="flex-1 py-4 bg-slate-950/80 rounded-2xl font-black text-[10px] uppercase tracking-widest text-slate-500"
                  >
-                    PREV
+                   RELOAD
                  </button>
-                 <span className="text-blue-500">{currentPageIndex + 1} / {pdfPages.length}</span>
                  <button 
-                    onClick={() => {
-                      const idx = Math.min(pdfPages.length - 1, currentPageIndex + 1);
-                      setCurrentPageIndex(idx);
-                      setCapturedImage(pdfPages[idx]);
-                    }}
-                    className="p-1 hover:text-blue-500 transition-colors disabled:opacity-30 pointer-events-auto"
-                    disabled={currentPageIndex === pdfPages.length - 1}
+                   onClick={processOCR}
+                   disabled={isProcessing}
+                   className="flex-3 py-4 bg-blue-600 rounded-2xl font-black text-xs uppercase tracking-widest text-white shadow-xl shadow-blue-500/20 flex items-center justify-center gap-2"
                  >
-                    NEXT
-                 </button>
-              </div>
-            )}
-            
-            <div className="absolute bottom-6 inset-x-4 flex items-center justify-between pointer-events-none">
-              <div className="flex gap-2 pointer-events-auto">
-                <button 
-                  onClick={() => setRotation((r) => (r + 90) % 360)}
-                  className="w-12 h-12 bg-slate-900/90 text-white rounded-2xl flex items-center justify-center border border-white/10 hover:bg-slate-800 transition-colors shadow-xl"
-                  title="Rotate"
-                >
-                  <RotateCw className="w-5 h-5" />
-                </button>
-                <button 
-                  onClick={() => setShowFilters(!showFilters)}
-                  className={`w-12 h-12 rounded-2xl flex items-center justify-center border border-white/10 transition-all shadow-xl ${showFilters ? 'bg-blue-600 text-white' : 'bg-slate-900/90 text-white hover:bg-slate-800'}`}
-                  title="Image Adjustments"
-                >
-                  <Sun className="w-5 h-5" />
-                </button>
-              </div>
-              
-              <div className="px-4 py-2 bg-slate-900/90 text-white rounded-2xl pointer-events-auto border border-white/10 flex items-center gap-4">
-                <input 
-                  type="range"
-                  min="1"
-                  max="3"
-                  step="0.1"
-                  value={zoom}
-                  onChange={(e) => setZoom(Number(e.target.value))}
-                  className="w-32 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                />
-              </div>
-            </div>
-
-            {showFilters && (
-              <div className="absolute top-4 inset-x-4 bg-slate-900/90 backdrop-blur-md rounded-3xl p-6 border border-white/10 space-y-6 shadow-2xl animate-in slide-in-from-top-4 duration-300">
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    <div className="flex items-center gap-2">
-                       <Sun className="w-3 h-3" /> Brightness
-                    </div>
-                    <span>{brightness}%</span>
-                  </div>
-                  <input 
-                    type="range"
-                    min="50"
-                    max="200"
-                    value={brightness}
-                    onChange={(e) => setBrightness(Number(e.target.value))}
-                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                  />
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    <div className="flex items-center gap-2">
-                       <Contrast className="w-3 h-3" /> Contrast
-                    </div>
-                    <span>{contrast}%</span>
-                  </div>
-                  <input 
-                    type="range"
-                    min="50"
-                    max="200"
-                    value={contrast}
-                    onChange={(e) => setContrast(Number(e.target.value))}
-                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                  />
-                </div>
-
-                <div className="flex justify-center">
-                  <button 
-                    onClick={() => { setBrightness(100); setContrast(100); }}
-                    className="text-[10px] font-black uppercase tracking-widest text-blue-500 hover:text-blue-400 transition-colors"
-                  >
-                    Reset Defaults
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="w-full h-full relative">
-            <img src={capturedImage} className="w-full h-full object-cover" id="captured_image_preview" />
-            
-            {isProcessing && (
-              <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center text-white p-10 text-center">
-                <div className="relative w-20 h-20 mb-6">
-                  <RefreshCw className="w-20 h-20 text-blue-500 animate-spin opacity-20" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <ScanLine className="w-8 h-8 text-blue-400" />
-                  </div>
-                </div>
-                <p className="text-2xl font-black italic tracking-tighter uppercase mb-2">Analyzing</p>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Extracting semantic data...</p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {capturedImage && !isProcessing && (
-        <div className="space-y-4">
-          <button 
-            onClick={handleScanToPdf}
-             className="w-full bg-slate-900 border border-white/10 py-5 rounded-[24px] font-black uppercase text-[12px] tracking-widest text-white flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-xl"
-          >
-            <Download className="w-4 h-4 text-blue-400" /> Save as PDF
-          </button>
-
-          {pdfPages.length > 1 && (
-            <button 
-              onClick={processBatchOCR}
-               className="w-full bg-blue-600/10 border border-blue-500/20 py-5 rounded-[24px] font-black uppercase text-[12px] tracking-widest text-blue-500 flex items-center justify-center gap-2 hover:bg-blue-600/20 transition-all shadow-xl"
-            >
-              <FileText className="w-4 h-4" /> Batch OCR {pdfPages.length} Pages
-            </button>
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            <button 
-              onClick={reset}
-              className="bg-slate-800 py-5 rounded-[24px] font-black uppercase text-[12px] tracking-widest text-slate-400 flex items-center justify-center gap-2 hover:bg-slate-700 transition-colors border border-white/5"
-              id="retake-button"
-            >
-              <X className="w-4 h-4" /> {isEditing ? 'CANCEL' : 'RETAKE'}
-            </button>
-            <button 
-              onClick={processOCR}
-              className="bg-blue-600 py-5 rounded-[24px] font-black uppercase text-[12px] tracking-widest text-white flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-xl shadow-blue-900/30"
-              id="proceed-button"
-            >
-              <Check className="w-4 h-4" /> {isEditing ? 'EXTRACT' : 'ANALYZE'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="mt-6 p-5 bg-red-500/10 border border-red-500/20 text-red-500 rounded-[24px] flex items-center gap-4">
-          <X className="w-6 h-6 flex-shrink-0" />
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">Scanner Error</p>
-            <p className="text-sm font-medium">{error}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Format Selection Modal */}
-      <AnimatePresence>
-        {showFormatModal && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => { setShowFormatModal(false); setOcrResult(null); }}
-              className="absolute inset-0 bg-slate-950/80 backdrop-blur-xl"
-            />
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-white rounded-[40px] w-full max-w-md overflow-hidden shadow-2xl flex flex-col relative z-10"
-            >
-              <div className="p-10 text-center border-b border-slate-100">
-                 <div className="w-16 h-16 bg-blue-50 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                    <Check className="w-8 h-8 text-blue-600" />
-                 </div>
-                 <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter mb-2">Recognition Complete</h3>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Choose your desired output format</p>
-              </div>
-              
-              <div className="p-4 bg-slate-50 flex flex-col gap-3">
-                 <button 
-                    onClick={() => handleFormatSelect('ai_refine')}
-                    className="w-full bg-blue-600 p-6 rounded-[28px] border border-blue-500 hover:shadow-lg transition-all group text-left flex items-center gap-4 text-white shadow-lg shadow-blue-500/20"
-                 >
-                    <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center">
-                       <Sparkles className="w-6 h-6 text-white animate-pulse" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-black uppercase tracking-widest">AI Enhance & Open</div>
-                      <div className="text-[10px] font-bold text-blue-100">Fix typos & format with Gemini Neural Engine</div>
-                    </div>
-                 </button>
-
-                 <button 
-                    onClick={() => handleFormatSelect('text')}
-                    className="w-full bg-white p-6 rounded-[28px] border border-slate-200 hover:border-blue-500 hover:shadow-lg transition-all group text-left flex items-center gap-4"
-                 >
-                    <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center group-hover:bg-blue-50 transition-colors">
-                       <Type className="w-6 h-6 text-slate-400 group-hover:text-blue-500" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-black uppercase tracking-widest text-slate-900">Plain Text</div>
-                      <div className="text-[10px] font-bold text-slate-400">Open in the full editor</div>
-                    </div>
-                 </button>
-  
-                 <button 
-                    onClick={() => handleFormatSelect('markdown')}
-                    className="w-full bg-white p-6 rounded-[28px] border border-slate-200 hover:border-blue-500 hover:shadow-lg transition-all group text-left flex items-center gap-4"
-                 >
-                    <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center group-hover:bg-blue-50 transition-colors">
-                       <Hash className="w-6 h-6 text-slate-400 group-hover:text-blue-500" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-black uppercase tracking-widest text-slate-900">Markdown Format</div>
-                      <div className="text-[10px] font-bold text-slate-400">Add headers and rich formatting</div>
-                    </div>
-                 </button>
-  
-                 <button 
-                    onClick={() => handleFormatSelect('pdf')}
-                    className="w-full bg-white p-6 rounded-[28px] border border-slate-200 hover:border-blue-500 hover:shadow-lg transition-all group text-left flex items-center gap-4"
-                 >
-                    <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center group-hover:bg-blue-50 transition-colors">
-                       <Download className="w-6 h-6 text-slate-400 group-hover:text-blue-500" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-black uppercase tracking-widest text-slate-900">Direct to PDF</div>
-                      <div className="text-[10px] font-bold text-slate-400">Download result immediately</div>
-                    </div>
-                 </button>
-              </div>
-  
-              <div className="p-6 bg-white">
-                 <button 
-                    onClick={() => { setShowFormatModal(false); setOcrResult(null); }}
-                    className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-red-500 transition-colors"
-                 >
-                    Discard Results
+                   {isProcessing ? (
+                     <>
+                       <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                       ANALYZING_CONTEXT...
+                     </>
+                   ) : (
+                     <>
+                       <Wand2 className="w-4 h-4" />
+                       RUN_NEURAL_PARSE
+                     </>
+                   )}
                  </button>
               </div>
             </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+          )}
 
-      <canvas ref={canvasRef} className="hidden" />
+          {mode === 'refine' && (
+            <motion.div 
+              key="refine"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="absolute inset-0 bg-slate-950 p-6 flex flex-col"
+            >
+              <div className="flex-1 bg-slate-900 rounded-3xl p-6 border border-white/5 overflow-y-auto">
+                <div className="flex items-center gap-3 mb-4 text-blue-500">
+                   <Check className="w-5 h-5" />
+                   <h3 className="text-xs font-black uppercase tracking-widest">Parsing Successful</h3>
+                </div>
+                <textarea 
+                  value={ocrText}
+                  onChange={(e) => setOcrText(e.target.value)}
+                  className="w-full h-full bg-transparent border-none focus:ring-0 text-sm leading-relaxed text-slate-300 font-medium font-mono resize-none"
+                  placeholder="No data extracted..."
+                />
+              </div>
+              <div className="mt-6 flex gap-4">
+                 <button 
+                   onClick={() => setMode('camera')}
+                   className="p-4 bg-slate-900 rounded-2xl text-slate-500 hover:text-white transition-colors"
+                 >
+                   <RefreshCcw className="w-5 h-5" />
+                 </button>
+                 <button 
+                   onClick={() => onCapture?.(ocrText)}
+                   className="flex-1 py-4 bg-blue-600 rounded-2xl font-black text-xs uppercase tracking-widest text-white shadow-xl shadow-blue-500/20 flex items-center justify-center gap-2"
+                 >
+                   INTEGRATE_INTO_WORKSPACE
+                 </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
-      <style dangerouslySetInnerHTML={{ __html: `
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileUpload} 
+        className="hidden" 
+        accept="image/*" 
+      />
+
+      {error && (
+        <div className="absolute top-20 inset-x-4 bg-red-500/90 backdrop-blur-xl p-4 rounded-2xl flex items-center gap-3 text-white z-50 animate-in slide-in-from-top-4">
+           <X className="w-5 h-5 shrink-0" onClick={() => setError(null)} />
+           <p className="text-[10px] font-black uppercase tracking-widest">{error}</p>
+        </div>
+      )}
+
+      <style>{`
         @keyframes scan {
-          0%, 100% { top: 0%; opacity: 0.5; }
-          50% { top: 100%; opacity: 1; }
+          0% { top: 0% }
+          100% { top: 100% }
         }
-      `}} />
-    </Layout>
+        .animate-scan {
+          animation: scan 2.5s linear infinite;
+        }
+      `}</style>
+      <canvas ref={canvasRef} className="hidden" />
+    </div>
   );
 }

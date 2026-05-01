@@ -1,9 +1,7 @@
 {
-  "name": "AP Notes Pro",
-  "description": "The ultimate AI-powered professional workspace. Level 4 OCR, Gemini Neural Engine, and seamless Cloud Sync for professional drafting and document management.",
+  "name": "AP_NOTES_PRO",
+  "description": "Professional AI-powered workspace for neural data capture and OCR-based note management.",
   "requestFramePermissions": [
-    "camera",
-    "microphone"
-  ],
-  "majorCapabilities": []
+    "camera"
+  ]
 }
