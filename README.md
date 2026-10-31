@@ -165,12 +165,35 @@ Bug reports and focused pull requests are welcome. Before submitting a change:
 4. Include reproducible steps for reported bugs.
 
 ## Disclaimer
-AP Notes Pro is provided for educational and productivity purposes and is supplied on an “as is” and “as available” basis, subject to applicable law. AI output is not guaranteed to be accurate or suitable for a particular purpose. You are responsible for reviewing outputs, protecting your data and API keys, complying with third-party service terms, and maintaining backups. Read [Legal Disclaimer](./DISCLAIMER.md) before using or deploying the project.
 
-## Developer
-**Ankon Polley**  
+The Developer is not responsible for harm or damages arising from use of this repository, to the maximum extent permitted by applicable law. Please read the full [Legal Disclaimer](DISCLAIMER.md) before use. This notice does not exclude or limit any liability that cannot legally be excluded or limited.
+
+## For Support
+
+<p align="left">
+  <a href="https://www.instagram.com/its_an_geun_woo?igsh=OTNqMndzdDFzZ293"><img src="https://img.shields.io/badge/Instagram-Main-E4405F?style=for-the-badge&logo=instagram&logoColor=white" alt="Instagram Main" /></a>
+  <a href="https://www.instagram.com/its_ankon_polley?igsh=MXQyNnVpcGV2bmF5aw=="><img src="https://img.shields.io/badge/Instagram-Alt-E4405F?style=for-the-badge&logo=instagram&logoColor=white" alt="Instagram Alt" /></a>
+  <a href="https://x.com/AnkonPolley"><img src="https://img.shields.io/badge/Twitter-Follow-000000?style=for-the-badge&logo=x&logoColor=white" alt="X / Twitter" /></a>
+  <a href="https://www.threads.net/@itz_vorzhevik_volnyshev"><img src="https://img.shields.io/badge/Threads-Follow-000000?style=for-the-badge&logo=threads&logoColor=white" alt="Threads" /></a>
+  <a href="https://www.facebook.com/share/1DrXE7djH1/"><img src="https://img.shields.io/badge/Facebook-Connect-1877F2?style=for-the-badge&logo=facebook&logoColor=white" alt="Facebook" /></a>
+  <a href="https://www.reddit.com/u/robertoppenheimer123/s/1lsT0KNM9r"><img src="https://img.shields.io/badge/Reddit-Profile-FF4500?style=for-the-badge&logo=reddit&logoColor=white" alt="Reddit" /></a>
+  <a href="https://pin.it/3uKE8ZdFc"><img src="https://img.shields.io/badge/Pinterest-Saves-E60023?style=for-the-badge&logo=pinterest&logoColor=white" alt="Pinterest" /></a>
+</p>
+
+**Project URL:** https://github.com/anknpolley123/AP_NOTES1
+
+## 👨‍💻 Developer
+
+**Ankon Polley**
+
+**Developer | Programmer | Technology Enthusiast**
+
 GitHub: [@anknpolley123](https://github.com/anknpolley123)
 
 ---
 
-If you find an issue, please open an issue in this repository with a clear description and steps to reproduce it.
+<p align="center">
+  <b>Ankonaii — Organize Your Thoughts. Build Your Future.</b>
+  <br>
+  Made with ❤️ by Ankon Polley
+</p>
