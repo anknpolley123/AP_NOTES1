@@ -148,7 +148,7 @@ The last command opens the Android project in Android Studio. Building or signin
 - **Exports:** Files exported to your device may be accessible to other apps or people with access to that device.
 - **Secrets:** Do not commit .env.local or any real credentials. Client-side configuration is not a substitute for server-side access control.
 
-See [Disclaimer.md](./Disclaimer.md) for the full project disclaimer.
+See [Legal Disclaimer](./DISCLAIMER.md) for the full project disclaimer.
 
 ## Known limitations
 - The repository is under active development; UI elements do not necessarily indicate that a related backend integration is complete.
@@ -165,7 +165,7 @@ Bug reports and focused pull requests are welcome. Before submitting a change:
 4. Include reproducible steps for reported bugs.
 
 ## Disclaimer
-AP Notes Pro is provided for educational and productivity purposes and is supplied on an “as is” and “as available” basis, subject to applicable law. AI output is not guaranteed to be accurate or suitable for a particular purpose. You are responsible for reviewing outputs, protecting your data and API keys, complying with third-party service terms, and maintaining backups. Read [Disclaimer.md](./Disclaimer.md) before using or deploying the project.
+AP Notes Pro is provided for educational and productivity purposes and is supplied on an “as is” and “as available” basis, subject to applicable law. AI output is not guaranteed to be accurate or suitable for a particular purpose. You are responsible for reviewing outputs, protecting your data and API keys, complying with third-party service terms, and maintaining backups. Read [Legal Disclaimer](./DISCLAIMER.md) before using or deploying the project.
 
 ## Developer
 **Ankon Polley**  
