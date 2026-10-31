@@ -166,7 +166,7 @@ Bug reports and focused pull requests are welcome. Before submitting a change:
 
 ## Disclaimer
 
-The Developer is not responsible for harm or damages arising from use of this repository, to the maximum extent permitted by applicable law. Please read the full [Legal Disclaimer](DISCLAIMER.md) before use. This notice does not exclude or limit any liability that cannot legally be excluded or limited.
+The Developer is never responsible for any harm or damages caused by this repository. Please read the full [Legal Disclaimer](DISCLAIMER.md) before use.
 
 ## For Support
 
@@ -193,7 +193,7 @@ GitHub: [@anknpolley123](https://github.com/anknpolley123)
 ---
 
 <p align="center">
-  <b>Ankonaii — Organize Your Thoughts. Build Your Future.</b>
+  <b>AP_NOTES1 — Organize Your Thoughts. Build Your Future.</b>
   <br>
   Made with ❤️ by Ankon Polley
 </p>
